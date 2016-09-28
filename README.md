@@ -49,9 +49,21 @@ Builtin aggregation functions to be used with add_sec_metric
 graphite.send(name, res, timestamp)
 ```
 
+### Utility functions
+``` lua
+-- An utility function, handy for adding the following set of per minute metrics with a single line of code to your functions
+-- metric names are: func_name_avg, func_name_min, func_name_max, func_name_rpm
+graphite.wrap_func_with_stat(name, func)
+```
+
 ## Usage examples
-`graphite.add_sec_metric('delete_rps_max', function() return box.stat().DELETE.rps end, graphite.max)`
+``` lua
+graphite.add_sec_metric('delete_rps_max', function() return box.stat().DELETE.rps end, graphite.max)
 
-`graphite.add('requests', 1)`
+graphite.add('requests', 1)
 
-`graphite.max_per_min('max_mysql_query_time', query_time)`
+graphite.max_per_min('max_mysql_query_time', query_time)
+
+local function dostuff() end
+dostuff = graphite.wrap_func_with_stat('dostuff', dostuff)
+```
