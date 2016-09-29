@@ -33,6 +33,7 @@ graphite.add_sec_metric(name, metric_fn, aggr_fn)```
 ### Aggregation functions
 
 Builtin aggregation functions to be used with add_sec_metric
+
 `graphite.sum`
 
 `graphite.sum_per_sec`
