@@ -5,6 +5,8 @@ log = require('log')
 local _M = { }
 local metrics = { }
 local initialized = false
+local common_stat_fiber = nil
+local stat_fiber = nil
 
 local sock = nil
 local host = ''
@@ -219,50 +221,77 @@ local function collect_stats()
 	end
 end
 
+_M.stop = function()
+	if common_stat_fiber ~= nil then
+		fiber.kill(common_stat_fiber:id())
+		common_stat_fiber = nil
+	end
+
+	if stat_fiber ~= nil then
+		fiber.kill(stat_fiber:id())
+		stat_fiber = nil
+	end
+
+	if sock ~= nil then
+		sock:close()
+		sock = nil
+	end
+
+	metrics = {}
+	initialized = false
+end
+
+_M.metrics = function()
+	return metrics
+end
+
 _M.init = function(prefix_, host_, port_)
 	prefix = prefix_ or 'localhost.tarantool.'
 	host = host_ or 'nerv1.i'
 	port = port_ or 2003
 
-	if initialized == false then
-		init_stats()
+	_M.stop()
 
-		local sf = fiber.create(function()
-			sock = socket('AF_INET', 'SOCK_DGRAM', 'udp')
+	init_stats()
+	initialized = true
 
-			if sock ~= nil then
-				local t = fiber.time()
-				while true do
-					local ostats_box = box.stat()
-					local ostats_net = box.stat.net()
-					local nt = fiber.time()
+	common_stat_fiber = fiber.create(function()
+		fiber.name("graphite_common_stat")
 
-					st = 60 - (nt - t)
-					fiber.sleep(st)
+		sock = socket('AF_INET', 'SOCK_DGRAM', 'udp')
 
-					local stats_box = box.stat()
-					local stats_net = box.stat.net()
+		if sock ~= nil then
+			local t = fiber.time()
+			while true do
+				local ostats_box = box.stat()
+				local ostats_net = box.stat.net()
+				local nt = fiber.time()
 
-					t = fiber.time()
-					send_stats(ostats_box, stats_box, ostats_net, stats_net, t, t - nt)
-				end
+				local st = 60 - (nt - t)
+				fiber.sleep(st)
+
+				local stats_box = box.stat()
+				local stats_net = box.stat.net()
+
+				t = fiber.time()
+				send_stats(ostats_box, stats_box, ostats_net, stats_net, t, t - nt)
 			end
-		end)
-
-		if sf then
-			local cf = fiber.create(function()
-					while true do
-						collect_stats()
-						fiber.sleep(1)
-					end
-				end
-			)
 		end
+	end)
 
-		log.info("Successfully initialized graphite module")
+	if common_stat_fiber ~= nil then
+		stat_fiber = fiber.create(function()
+			fiber.name("graphite_stat")
 
-		initialized = true
+			while true do
+				collect_stats()
+				fiber.sleep(1)
+			end
+		end
+		)
 	end
+
+	log.info("Successfully initialized graphite module")
 end
 
 _M.sum = function(first, last, values, dt)
@@ -367,7 +396,6 @@ _M.avg_per_min = function(name, value)
 		metrics[id] = { mtype, name, value, 0, 1 }
 	else
 		metrics[id][4] = metrics[id][4] + (value - metrics[id][3])
-		log.info(tostring(metrics[id][3]) .. ' ' .. tostring(metrics[id][4]))
 		metrics[id][5] = metrics[id][5] + 1
 	end
 end
@@ -402,6 +430,36 @@ end
 
 _M.inc = function(name)
 	_M.add(name, 1)
+end
+
+_M.status = function()
+	local status = {}
+
+	status['initialized'] = initialized
+
+	if initialized == true then
+		status['fibers'] = {}
+
+		if common_stat_fiber ~= nil then
+			table.insert(status['fibers'], {
+				name = common_stat_fiber:name(),
+				status = common_stat_fiber:status()
+			})
+		end
+
+		if stat_fiber ~= nil then
+			table.insert(status['fibers'], {
+				name = stat_fiber:name(),
+				status = stat_fiber:status()
+			})
+		end
+
+		status['host'] = host
+		status['port'] = port
+		status['prefix'] = prefix
+	end
+
+	return status
 end
 
 return _M
