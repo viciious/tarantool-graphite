@@ -61,10 +61,10 @@ If you have a common set of metrics which you need to apply to every function in
 
 ``` lua
 local graphite = require('graphite')
-local fiber = require('fiber')
+local clock = require('clock')
 
 local function module_common_stat_tail(stat_name, start_time, ...)
-	local delta = fiber.time64() - start_time
+	local delta = clock.time64() - start_time
 	graphite.avg_per_min(stat_name['avg'], delta)
 	graphite.min_per_min(stat_name['min'], delta)
 	graphite.max_per_min(stat_name['max'], delta)
@@ -81,7 +81,7 @@ local function module_common_stat(name, func)
 	}
 
 	return function(...)
-		return module_common_stat_tail(stat_name, fiber.time64(), func(...))
+		return module_common_stat_tail(stat_name, clock.time64(), func(...))
 	end
 end
 
