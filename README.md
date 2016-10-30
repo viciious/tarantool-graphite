@@ -63,13 +63,8 @@ If you have a common set of metrics which you need to apply to every function in
 local graphite = require('graphite')
 local clock = require('clock')
 
-local function module_common_stat_tail(stat_name, start_time, ...)
-	local delta = clock.time64() - start_time
-	graphite.avg_per_min(stat_name['avg'], delta)
-	graphite.min_per_min(stat_name['min'], delta)
-	graphite.max_per_min(stat_name['max'], delta)
-	graphite.sum_per_min(stat_name['rpm'], 1)
-	return ...
+local function pack(...)
+	return {r = {...}, n = select('#', ...)}
 end
 
 local function module_common_stat(name, func)
@@ -81,7 +76,16 @@ local function module_common_stat(name, func)
 	}
 
 	return function(...)
-		return module_common_stat_tail(stat_name, clock.time64(), func(...))
+		local start = clock.time64()
+		local ret = pack(func(...))
+		local delta = tonumber(clock.time64() - start) / 1000
+
+		graphite.avg_per_min(stat_name['avg'], delta)
+		graphite.min_per_min(stat_name['min'], delta)
+		graphite.max_per_min(stat_name['max'], delta)
+		graphite.sum_per_min(stat_name['rpm'], 1)
+
+		return unpack(ret.r, 1, ret.n)
 	end
 end
 
