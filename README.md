@@ -49,6 +49,18 @@ Builtin aggregation functions to be used with add_sec_metric
 -- transmits metric value to graphite
 graphite.send(name, res, timestamp)
 ```
+### Expirationd metrics helper function
+add_expirationd_callbacks wraps is_tuple_expired and process_expired_tuple functions
+of every expirationd task and calls proper callback after it's being invoked
+callback function receives (name, start, stop, args)
+name - expirationd task name
+start, stop - result of clock.time64() call before and after invocation of:
+is_tuple_expired_callback, process_expired_tuple_callback
+args - passed to callbacks as additional context
+``` lua
+graphite.add_expirationd_callbacks(is_tuple_expired_callback, 
+		process_expired_tuple_callback, args)
+```
 
 ## Usage examples
 `graphite.add_sec_metric('delete_rps_max', function() return box.stat().DELETE.rps end, graphite.max)`

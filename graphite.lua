@@ -1,6 +1,7 @@
 fiber = require('fiber')
 socket = require('socket')
 log = require('log')
+local clock = require('clock')
 
 local _M = { }
 local metrics = { }
@@ -291,7 +292,7 @@ _M.init = function(prefix_, host_, port_)
 		)
 	end
 
-	log.info("Successfully initialized graphite module")
+	log.info("Successfully initialized graphite module: %s:%s", host, port)
 end
 
 _M.sum = function(first, last, values, dt)
@@ -460,6 +461,38 @@ _M.status = function()
 	end
 
 	return status
+end
+
+local function pack(...)
+	return {r = {...}, n = select('#', ...)}
+end
+
+local function wrap_expirationd_func(func, name, callback, args)
+	return function (...)
+		local start = clock.time64()
+		local ret = pack(func(...))
+		callback(name, start, clock.time64(), args)
+		return unpack(ret.r, 1, ret.n)
+	end
+end
+
+_M.add_expirationd_callbacks = function(is_tuple_expired_callback,
+		process_expired_tuple_callback, args)
+	local expirationd = require('expirationd')
+	local task_names = expirationd.tasks()
+	for _, name in pairs(task_names) do
+		local task = expirationd.task(name)
+		if type(is_tuple_expired_callback) == 'function' then
+			task.is_tuple_expired = wrap_expirationd_func(
+				task.is_tuple_expired,
+				name, is_tuple_expired_callback, args)
+		end
+		if type(process_expired_tuple_callback) == 'function' then
+			task.process_expired_tuple = wrap_expirationd_func(
+				task.process_expired_tuple,
+				name, process_expired_tuple_callback, args)
+		end
+	end
 end
 
 return _M
