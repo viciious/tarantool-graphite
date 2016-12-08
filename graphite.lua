@@ -174,7 +174,7 @@ local function send_expirationd_stats(ts, dt)
 			local task_prefix = 'expirationd.' .. task_name .. '.'
 			for name, value in pairs(task) do
 				if type(value) == "number" then
-					local stat = string.gsub(name, "%.", "_")
+					local stat = string.gsub(name, "[.:]", "_")
 					send_graph(task_prefix .. stat, value, ts)
 				end
 			end
