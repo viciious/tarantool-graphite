@@ -278,7 +278,7 @@ _M.init = function(prefix_, host_, port_)
 	initialized = true
 
 	ok, expirationd = pcall(require, "expirationd")
-	if not ok then expiration = nil end
+	if not ok then expirationd = nil end
 
 	common_stat_fiber = fiber.create(function()
 		fiber.name("graphite_common_stat")
