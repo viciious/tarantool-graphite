@@ -182,6 +182,28 @@ local function send_expirationd_stats(ts, dt)
 	end
 end
 
+local function send_replication_stats(box_info, ts)
+	local box_id = box_info.server.id or 0
+	local box_lsn = box_info.server.lsn or 0
+	local vclock = box_info['vclock']
+
+	local sum = 0
+	for id, clock in ipairs(vclock) do
+		send_graph('vclock.' .. tostring(id), clock, ts)
+		sum = sum + clock
+	end
+
+	send_graph("id", box_id, ts)
+	send_graph("lsn", box_lsn, ts)
+	send_graph('vclock_sum', sum, ts)
+
+	send_graph('replication_vclock_sum', sum - box_lsn, ts)
+	if box_info.replication.status == "follow" then
+		send_graph("replication_idle", box_info.replication.idle, ts)
+		send_graph("replication_lag", box_info.replication.lag, ts)
+	end
+end
+
 local function init_stats()
 	_M.add_sec_metric('select_rps_max', function() return box.stat().SELECT.rps end, _M.max)
 	_M.add_sec_metric('replace_rps_max', function() return box.stat().REPLACE.rps end, _M.max)
@@ -201,14 +223,10 @@ local function send_stats(ostats_box, stats_box, ostats_net, stats_net, ts, dt)
 	dt = math.floor(dt)
 
 	if dt ~= 0 then
-		-- send global stats
-		send_graph("uptime", box.info.uptime or 0, ts)
-		send_graph("lsn", box.info.server.lsn or 0, ts)
+		local box_info = box.info
 
-		if box.info.replication.status == "follow" then
-			send_graph("replication_idle", box.info.replication.idle, ts)
-			send_graph("replication_lag", box.info.replication.lag, ts)
-		end
+		-- send global stats
+		send_graph("uptime", box_info.uptime or 0, ts)
 
 		-- send net stats
 		send_net_stats(ostats_net, stats_net, ts, dt)
@@ -221,6 +239,9 @@ local function send_stats(ostats_box, stats_box, ostats_net, stats_net, ts, dt)
 
 		-- send expirationd stats
 		send_expirationd_stats(ts, dt)
+
+		-- send replication stats
+		send_replication_stats(box_info, ts)
 
 		-- send custom metrics
 		send_metrics(ts, dt)
