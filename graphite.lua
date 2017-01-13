@@ -141,6 +141,15 @@ local function send_slab_stats(ts, dt)
 		send_graph(name, stat, ts)
 	end
 
+	if slab_info['quota_used'] and slab_info['quota_size'] then
+		local quota_used = tonumber(slab_info['quota_used']) or 0
+		local quota_size = tonumber(slab_info['quota_size']) or 0
+		if quota_size > 0 then
+			local quota_used_ratio = quota_used * 100 / quota_size
+			send_graph("quota_used_ratio", quota_used_ratio, ts)
+		end
+	end
+
 	send_graph('slab_alloc_arena', box.cfg.slab_alloc_arena, ts)
 	send_graph('slab_alloc_factor', box.cfg.slab_alloc_factor, ts)
 	send_graph('slab_alloc_minimal', box.cfg.slab_alloc_minimal, ts)
