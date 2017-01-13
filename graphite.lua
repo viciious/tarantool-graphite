@@ -13,8 +13,6 @@ local host = ''
 local port = 0
 local prefix = ''
 
-local expirationd = nil
-
 local METRIC_SEC_TIMER = 0
 local METRIC_SUM_PER_MIN = 1
 local METRIC_SUM_PER_SEC = 2
@@ -168,6 +166,9 @@ local function send_slab_stats(ts, dt)
 end
 
 local function send_expirationd_stats(ts, dt)
+	local ok, expirationd = pcall(require, "expirationd")
+	if not ok then expirationd = nil end
+
 	if expirationd ~= nil then
 		local tasks = expirationd.stats()
 		for task_name, task in pairs(tasks) do
@@ -287,8 +288,6 @@ _M.metrics = function()
 end
 
 _M.init = function(prefix_, host_, port_)
-	local ok = false
-
 	prefix = prefix_ or 'localhost.tarantool.'
 	host = host_ or 'nerv1.i'
 	port = port_ or 2003
@@ -297,9 +296,6 @@ _M.init = function(prefix_, host_, port_)
 
 	init_stats()
 	initialized = true
-
-	ok, expirationd = pcall(require, "expirationd")
-	if not ok then expirationd = nil end
 
 	common_stat_fiber = fiber.create(function()
 		fiber.name("graphite_common_stat")
