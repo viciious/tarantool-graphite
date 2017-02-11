@@ -49,6 +49,18 @@ Builtin aggregation functions to be used with add_sec_metric
 -- transmits metric value to graphite
 graphite.send(name, res, timestamp)
 ```
+### Expirationd metrics helper function
+add_expirationd_callbacks wraps is_tuple_expired and process_expired_tuple functions
+of every expirationd task and calls proper callback after it's being invoked
+callback function receives (name, start, stop, args)
+name - expirationd task name
+start, stop - result of clock.time64() call before and after invocation of:
+is_tuple_expired_callback, process_expired_tuple_callback
+args - passed to callbacks as additional context
+``` lua
+graphite.add_expirationd_callbacks(is_tuple_expired_callback, 
+		process_expired_tuple_callback, args)
+```
 
 ## Usage examples
 `graphite.add_sec_metric('delete_rps_max', function() return box.stat().DELETE.rps end, graphite.max)`
@@ -63,13 +75,8 @@ If you have a common set of metrics which you need to apply to every function in
 local graphite = require('graphite')
 local clock = require('clock')
 
-local function module_common_stat_tail(stat_name, start_time, ...)
-	local delta = clock.time64() - start_time
-	graphite.avg_per_min(stat_name['avg'], delta)
-	graphite.min_per_min(stat_name['min'], delta)
-	graphite.max_per_min(stat_name['max'], delta)
-	graphite.sum_per_min(stat_name['rpm'], 1)
-	return ...
+local function pack(...)
+	return {r = {...}, n = select('#', ...)}
 end
 
 local function module_common_stat(name, func)
@@ -81,7 +88,16 @@ local function module_common_stat(name, func)
 	}
 
 	return function(...)
-		return module_common_stat_tail(stat_name, clock.time64(), func(...))
+		local start = clock.time64()
+		local ret = pack(func(...))
+		local delta = tonumber(clock.time64() - start) / 1000
+
+		graphite.avg_per_min(stat_name['avg'], delta)
+		graphite.min_per_min(stat_name['min'], delta)
+		graphite.max_per_min(stat_name['max'], delta)
+		graphite.sum_per_min(stat_name['rpm'], 1)
+
+		return unpack(ret.r, 1, ret.n)
 	end
 end
 
