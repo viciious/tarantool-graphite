@@ -1,6 +1,6 @@
-fiber = require('fiber')
-socket = require('socket')
-log = require('log')
+local fiber = require('fiber')
+local socket = require('socket')
+local log = require('log')
 
 local _M = { }
 local metrics = { }
@@ -175,18 +175,17 @@ local function send_slab_stats(ts, dt)
 end
 
 local function send_expirationd_stats(ts, dt)
-	local ok, expirationd = pcall(require, "expirationd")
-	if not ok then expirationd = nil end
+	if not pcall(require, "expirationd") then
+		return
+	end
 
-	if expirationd ~= nil then
-		local tasks = expirationd.stats()
-		for task_name, task in pairs(tasks) do
-			local task_prefix = 'expirationd.' .. task_name .. '.'
-			for name, value in pairs(task) do
-				if type(value) == "number" then
-					local stat = string.gsub(name, "[.:]", "_")
-					send_graph(task_prefix .. stat, value, ts)
-				end
+	local tasks = require("expirationd").stats()
+	for task_name, task in pairs(tasks) do
+		local task_prefix = 'expirationd.' .. task_name .. '.'
+		for name, value in pairs(task) do
+			if type(value) == "number" then
+				local stat = string.gsub(name, "[.:]", "_")
+				send_graph(task_prefix .. stat, value, ts)
 			end
 		end
 	end
