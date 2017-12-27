@@ -20,6 +20,7 @@ local METRIC_VALUE = 3
 local METRIC_AVG_PER_MIN = 4
 local METRIC_MIN_PER_MIN = 5
 local METRIC_MAX_PER_MIN = 6
+local METRIC_CALLBACK = 7
 
 local function send_graph(name, res, ts)
 	if initialized == true then
@@ -79,6 +80,11 @@ local function send_metrics(ts, dt)
 				metric[3] = nil
 				send_graph(name, res, ts)
 			end
+        elseif mtype == METRIC_CALLBACK then
+            local res = metric[3]()
+            if res ~= nil then
+				send_graph(name, res, ts)
+            end
 		end
 	end
 end
@@ -480,6 +486,16 @@ end
 
 _M.inc = function(name)
 	_M.add(name, 1)
+end
+
+_M.callback = function(name, callback)
+    if type(callback) ~= 'function' then
+        log.error("callback is not a function")
+        return
+    end
+	local mtype = METRIC_CALLBACK
+	local id = name .. '_' .. tostring(mtype)
+	metrics[id] = { mtype, name, callback }
 end
 
 _M.status = function()
