@@ -90,13 +90,17 @@ local function send_net_stats(ostats_net, stats_net, ts, dt)
 	send_graph('net.sent_rps_avg', res, ts)
 	send_graph('net.sent_total', stats_net.SENT.total, ts)
 
-	res = (stats_net.EVENTS.total - ostats_net.EVENTS.total) / dt
-	send_graph('net.events_rps_avg', res, ts)
-	send_graph('net.events_total', stats_net.EVENTS.total, ts)
+    if stats_net.EVENTS then
+        res = (stats_net.EVENTS.total - ostats_net.EVENTS.total) / dt
+        send_graph('net.events_rps_avg', res, ts)
+        send_graph('net.events_total', stats_net.EVENTS.total, ts)
+    end
 
-	res = (stats_net.LOCKS.total - ostats_net.LOCKS.total) / dt
-	send_graph('net.locks_rps_avg', res, ts)
-	send_graph('net.locks_total', stats_net.LOCKS.total, ts)
+    if stats_net.LOCKS then
+        res = (stats_net.LOCKS.total - ostats_net.LOCKS.total) / dt
+        send_graph('net.locks_rps_avg', res, ts)
+        send_graph('net.locks_total', stats_net.LOCKS.total, ts)
+    end
 
 	res = (stats_net.RECEIVED.total - ostats_net.RECEIVED.total) / dt
 	send_graph('net.received_rps_avg', res, ts)
