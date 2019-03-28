@@ -13,6 +13,10 @@ local host = ''
 local port = 0
 local prefix = ''
 
+local packet_buf = ""
+
+local PACKET_BUF_MAXLEN = 1024
+
 local METRIC_SEC_TIMER = 0
 local METRIC_SUM_PER_MIN = 1
 local METRIC_SUM_PER_SEC = 2
@@ -21,10 +25,32 @@ local METRIC_AVG_PER_MIN = 4
 local METRIC_MIN_PER_MIN = 5
 local METRIC_MAX_PER_MIN = 6
 
+local function send_batched_packet()
+	if initialized ~= true then
+		return
+	end
+	if packet_buf == "" then
+		return
+	end
+	sock:sendto(host, port, packet_buf)
+	packet_buf = ""
+end
+
 local function send_graph(name, res, ts)
-	if initialized == true then
-		local graph = prefix .. name .. ' ' .. tostring(res) .. ' ' .. tostring(ts) .. '\n'
+	if initialized ~= true then
+		return
+	end
+
+	local graph = prefix .. name .. ' ' .. tostring(res) .. ' ' .. tostring(ts) .. '\n'
+
+	if #packet_buf + #graph > PACKET_BUF_MAXLEN then
+		send_batched_packet()
+	end
+
+	if #graph > PACKET_BUF_MAXLEN then
 		sock:sendto(host, port, graph)
+	else
+		packet_buf = packet_buf .. graph
 	end
 end
 
@@ -174,6 +200,13 @@ local function send_slab_stats(ts, dt)
 	send_graph('item_count', item_count, ts)
 end
 
+local function send_runtime_stats(ts, dt)
+	local info = box.runtime.info()
+
+	send_graph('runtime_lua', info.lua, ts)
+	send_graph('runtime_used', info.used, ts)
+end
+
 local function send_expirationd_stats(ts, dt)
 	if not pcall(require, "expirationd") then
 		return
@@ -213,6 +246,28 @@ local function send_replication_stats(box_info, ts)
 	end
 end
 
+local function send_cluster_stats(cluster, anon_uuid, ts)
+	local has_anon_uuid = 0
+	if not cluster or type(cluster) ~= "table" then cluster = {} end
+
+	send_graph('cluster.count', #cluster, ts)
+
+	for _, srv in ipairs(cluster) do
+		local id, uuid = srv[1], srv[2]
+		local prefix = 'cluster.' .. tostring(id) .. '.' .. uuid .. '.'
+		if has_anon_uuid == 0 and anon_uuid and uuid == anon_uuid then
+			has_anon_uuid = 1
+		end
+
+		send_graph(prefix .. 'active', 1, ts)
+		send_graph(prefix .. 'vclock_id', id, ts)
+	end 
+
+	if anon_uuid then
+		send_graph('cluster.has_anon_uuid', has_anon_uuid, ts)
+	end
+end
+
 local function init_stats()
 	_M.add_sec_metric('select_rps_max', function() return box.stat().SELECT.rps end, _M.max)
 	_M.add_sec_metric('replace_rps_max', function() return box.stat().REPLACE.rps end, _M.max)
@@ -225,7 +280,7 @@ local function init_stats()
 	_M.add_sec_metric('error_rps_max', function() return box.stat().ERROR.rps end, _M.max)
 end
 
-local function send_stats(ostats_box, stats_box, ostats_net, stats_net, ts, dt)
+local function send_stats(ostats_box, stats_box, ostats_net, stats_net, anon_cluster_uuid, ts, dt)
 	local res = 0
 
 	ts = math.floor(ts)
@@ -246,14 +301,23 @@ local function send_stats(ostats_box, stats_box, ostats_net, stats_net, ts, dt)
 		-- send slab stats
 		send_slab_stats(ts, dt)
 
+		-- send runtime lua stats
+		send_runtime_stats(ts, dt)
+
 		-- send expirationd stats
 		send_expirationd_stats(ts, dt)
 
 		-- send replication stats
 		send_replication_stats(box_info, ts)
 
+		-- send cluster stats
+		send_cluster_stats(box.space._cluster:select{}, anon_cluster_uuid, ts)
+
 		-- send custom metrics
 		send_metrics(ts, dt)
+
+		-- send batched UDP packet over network
+		send_batched_packet()
 	end
 end
 
@@ -295,7 +359,7 @@ _M.metrics = function()
 	return metrics
 end
 
-_M.init = function(prefix_, host_, port_)
+_M.init = function(prefix_, host_, port_, anon_cluster_uuid)
 	prefix = prefix_ or 'localhost.tarantool.'
 	host = host_ or 'nerv1.i'
 	port = port_ or 2003
@@ -324,7 +388,7 @@ _M.init = function(prefix_, host_, port_)
 				local stats_net = box.stat.net()
 
 				t = fiber.time()
-				send_stats(ostats_box, stats_box, ostats_net, stats_net, t, t - nt)
+				send_stats(ostats_box, stats_box, ostats_net, stats_net, anon_cluster_uuid, t, t - nt)
 			end
 		end
 	end)
