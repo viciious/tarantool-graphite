@@ -336,15 +336,21 @@ local function collect_stats()
 end
 
 _M.stop = function()
-	if common_stat_fiber ~= nil then
-		fiber.kill(common_stat_fiber:id())
-		common_stat_fiber = nil
-	end
+    for k, v in pairs(fiber.info()) do
+        if string.find(v.name, 'graphite_common_stat') then
+            log.info("killing fiber '%s' (%d)", v.name, v.fid)
+            fiber.kill(v.fid)
+        end
+    end
+    common_stat_fiber = nil
 
-	if stat_fiber ~= nil then
-		fiber.kill(stat_fiber:id())
-		stat_fiber = nil
-	end
+    for k, v in pairs(fiber.info()) do
+        if string.find(v.name, 'graphite_stat') then
+            log.info("killing fiber '%s' (%d)", v.name, v.fid)
+            fiber.kill(v.fid)
+        end
+    end
+    stat_fiber = nil
 
 	if sock ~= nil then
 		sock:close()
