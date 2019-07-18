@@ -337,12 +337,12 @@ end
 
 _M.stop = function()
 	if common_stat_fiber ~= nil then
-		fiber.kill(common_stat_fiber:id())
+		pcall(fiber.kill, common_stat_fiber:id())
 		common_stat_fiber = nil
 	end
 
 	if stat_fiber ~= nil then
-		fiber.kill(stat_fiber:id())
+		pcall(fiber.kill, stat_fiber:id())
 		stat_fiber = nil
 	end
 
