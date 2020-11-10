@@ -116,13 +116,28 @@ local function send_net_stats(ostats_net, stats_net, ts, dt)
 	send_graph('net.sent_rps_avg', res, ts)
 	send_graph('net.sent_total', stats_net.SENT.total, ts)
 
-	res = (stats_net.EVENTS.total - ostats_net.EVENTS.total) / dt
-	send_graph('net.events_rps_avg', res, ts)
-	send_graph('net.events_total', stats_net.EVENTS.total, ts)
+	if stats_net.EVENTS then
+		res = (stats_net.EVENTS.total - ostats_net.EVENTS.total) / dt
+		send_graph('net.events_rps_avg', res, ts)
+		send_graph('net.events_total', stats_net.EVENTS.total, ts)
+	end
+	if stats_net.REQUESTS then
+		res = (stats_net.REQUESTS.total - ostats_net.REQUESTS.total) / dt
+		send_graph('net.requests_rps_avg', res, ts)
+		send_graph('net.requests_total', stats_net.REQUESTS.total, ts)
+	end
 
-	res = (stats_net.LOCKS.total - ostats_net.LOCKS.total) / dt
-	send_graph('net.locks_rps_avg', res, ts)
-	send_graph('net.locks_total', stats_net.LOCKS.total, ts)
+	if stats_net.LOCKS then
+		res = (stats_net.LOCKS.total - ostats_net.LOCKS.total) / dt
+		send_graph('net.locks_rps_avg', res, ts)
+		send_graph('net.locks_total', stats_net.LOCKS.total, ts)
+	end
+
+	if stats_net.CONNECTIONS then
+		res = (stats_net.CONNECTIONS.total - ostats_net.CONNECTIONS.total) / dt
+		send_graph('net.connections_rps_avg', res, ts)
+		send_graph('net.connections_total', stats_net.CONNECTIONS.total, ts)
+	end
 
 	res = (stats_net.RECEIVED.total - ostats_net.RECEIVED.total) / dt
 	send_graph('net.received_rps_avg', res, ts)
@@ -167,7 +182,7 @@ local function send_slab_stats(ts, dt)
 		send_graph(name, stat, ts)
 	end
 
-	if slab_info['quota_used'] and slab_info['quota_size'] then
+	if not slab_info['quota_used_ratio'] and slab_info['quota_used'] and slab_info['quota_size'] then
 		local quota_used = tonumber(slab_info['quota_used']) or 0
 		local quota_size = tonumber(slab_info['quota_size']) or 0
 		if quota_size > 0 then
@@ -176,10 +191,16 @@ local function send_slab_stats(ts, dt)
 		end
 	end
 
-	send_graph('slab_alloc_arena', box.cfg.slab_alloc_arena, ts)
-	send_graph('slab_alloc_factor', box.cfg.slab_alloc_factor, ts)
-	send_graph('slab_alloc_minimal', box.cfg.slab_alloc_minimal, ts)
-	send_graph('slab_alloc_maximal', box.cfg.slab_alloc_maximal, ts)
+	if box.cfg.memtx_memory then
+		send_graph('memtx_memory', box.cfg.memtx_memory, ts)
+		send_graph('memtx_max_tuple_size', box.cfg.memtx_max_tuple_size, ts)
+		send_graph('memtx_min_tuple_size', box.cfg.memtx_min_tuple_size, ts)
+	else
+		send_graph('slab_alloc_arena', box.cfg.slab_alloc_arena, ts)
+		send_graph('slab_alloc_factor', box.cfg.slab_alloc_factor, ts)
+		send_graph('slab_alloc_minimal', box.cfg.slab_alloc_minimal, ts)
+		send_graph('slab_alloc_maximal', box.cfg.slab_alloc_maximal, ts)
+	end
 
 	local item_count = 0
 
@@ -225,24 +246,64 @@ local function send_expirationd_stats(ts, dt)
 end
 
 local function send_replication_stats(box_info, ts)
-	local box_id = box_info.server.id or 0
-	local box_lsn = box_info.server.lsn or 0
-	local vclock = box_info['vclock']
-
-	local sum = 0
-	for id, clock in ipairs(vclock) do
-		send_graph('vclock.' .. tostring(id), clock, ts)
-		sum = sum + clock
-	end
+	local box_id = (box_info.id or box_info.server.id) or 0
+	local box_lsn = (box_info.lsn or box_info.server.lsn) or 0
+	local read_only = box_info.read_only or 0
 
 	send_graph("id", box_id, ts)
 	send_graph("lsn", box_lsn, ts)
-	send_graph('vclock_sum', sum, ts)
+	send_graph("read_only", read_only, ts)
 
-	send_graph('replication_vclock_sum', sum - box_lsn, ts)
-	if box_info.replication.status == "follow" then
-		send_graph("replication_idle", box_info.replication.idle, ts)
-		send_graph("replication_lag", box_info.replication.lag, ts)
+	local repl = box_info.replication
+	if repl.status and type(repl.status) == "string" then
+		local vclock = box_info['vclock']
+
+		local sum = 0
+		for id, clock in ipairs(vclock) do
+			send_graph('vclock.' .. tostring(id), clock, ts)
+			sum = sum + clock
+		end
+
+		send_graph('vclock_sum', sum, ts)
+		send_graph('replication_vclock_sum', sum - box_lsn, ts)
+
+		if repl.status == "follow" then
+			send_graph("replication_idle", repl.idle, ts)
+			send_graph("replication_lag", repl.lag, ts)
+		end
+	else
+		local follow = 0
+		local idle, lag = (box.cfg.replication_timeout or 1) * 1000, 0
+
+		for _, r in ipairs(repl) do
+			local u = r.upstream
+			if u then
+				local peer = string.gsub(u.peer, "[.:]", "_")
+				local u_follow = 0
+				if u.status == "follow" then u_follow = 1 end
+
+				send_graph(peer .. '.id', r.id, ts)
+				send_graph(peer .. '.lsn', r.lsn, ts)
+				send_graph(peer .. '.follow', u_follow, ts)
+				send_graph(peer .. '.idle', u.idle, ts)
+				send_graph(peer .. '.lag', u.lag, ts)
+
+				if u_follow > follow then follow = 1 end
+				if u.idle < idle then idle = u.idle end
+				if u.lag > lag then lag = u.lag end
+			end
+		end
+
+		send_graph("replication.follow", follow, ts)
+		if follow ~= 0 then
+			send_graph("replication.idle", idle, ts)
+			send_graph("replication.lag", lag, ts)
+		end
+	end
+
+	if box_info.replication_anon then
+		local anon = box_info.replication_anon
+		send_graph("replication_anon.count", anon.count, ts)
 	end
 end
 
@@ -265,6 +326,16 @@ local function send_cluster_stats(cluster, anon_uuid, ts)
 
 	if anon_uuid then
 		send_graph('cluster.has_anon_uuid', has_anon_uuid, ts)
+	end
+end
+
+local function send_memory_stats(mem, ts)
+	if not mem then
+		return
+	end
+
+	for s, v in pairs(mem) do
+		send_graph('memory.' .. s, v, ts)
 	end
 end
 
@@ -311,7 +382,13 @@ local function send_stats(ostats_box, stats_box, ostats_net, stats_net, anon_clu
 		send_replication_stats(box_info, ts)
 
 		-- send cluster stats
-		send_cluster_stats(box.space._cluster:select{}, anon_cluster_uuid, ts)
+		if anon_cluster_uuid and anon_cluster_uuid ~= "" then
+			send_cluster_stats(box.space._cluster:select{}, anon_cluster_uuid, ts)
+		end
+
+		if box.info.memory then
+			send_memory_stats(box.info.memory(), ts)
+		end
 
 		-- send custom metrics
 		send_metrics(ts, dt)
