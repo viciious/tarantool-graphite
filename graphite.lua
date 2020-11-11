@@ -279,6 +279,9 @@ local function send_replication_stats(box_info, ts)
 			local u = r.upstream
 			if u then
 				local peer = string.gsub(u.peer, "[.:]", "_")
+				local match = string.gmatch(peer, "[^@]+@(.*)")
+				if match then peer = match() end
+
 				local u_follow = 0
 				if u.status == "follow" then u_follow = 1 end
 
@@ -330,10 +333,7 @@ local function send_cluster_stats(cluster, anon_uuid, ts)
 end
 
 local function send_memory_stats(mem, ts)
-	if not mem then
-		return
-	end
-
+	if not mem then return end
 	for s, v in pairs(mem) do
 		send_graph('memory.' .. s, v, ts)
 	end
