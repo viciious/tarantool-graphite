@@ -285,11 +285,12 @@ local function send_replication_stats(box_info, ts)
 				local u_follow = 0
 				if u.status == "follow" then u_follow = 1 end
 
-				send_graph(peer .. '.id', r.id, ts)
-				send_graph(peer .. '.lsn', r.lsn, ts)
-				send_graph(peer .. '.follow', u_follow, ts)
-				send_graph(peer .. '.idle', u.idle, ts)
-				send_graph(peer .. '.lag', u.lag, ts)
+				local prefix = 'replication.upstream.' .. peer .. '.'
+				send_graph(prefix .. 'id', r.id, ts)
+				send_graph(prefix .. 'lsn', r.lsn, ts)
+				send_graph(prefix .. 'follow', u_follow, ts)
+				send_graph(prefix .. 'idle', u.idle, ts)
+				send_graph(prefix .. 'lag', u.lag, ts)
 
 				if u_follow > follow then follow = 1 end
 				if u.idle < idle then idle = u.idle end
@@ -297,10 +298,10 @@ local function send_replication_stats(box_info, ts)
 			end
 		end
 
-		send_graph("replication.follow", follow, ts)
+		send_graph("replication.upstream.follow", follow, ts)
 		if follow ~= 0 then
-			send_graph("replication.idle", idle, ts)
-			send_graph("replication.lag", lag, ts)
+			send_graph("replication.upstream.idle", idle, ts)
+			send_graph("replication.upstream.lag", lag, ts)
 		end
 	end
 
