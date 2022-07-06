@@ -414,20 +414,25 @@ local function collect_stats()
 end
 
 _M.stop = function()
-	if common_stat_fiber ~= nil then
-		pcall(fiber.kill, common_stat_fiber:id())
-		common_stat_fiber = nil
+	local f
+	
+	f = common_stat_fiber
+	if f ~= nil and f:status() ~= "dead" then
+		pcall(fiber.kill, f:id())
 	end
 
-	if stat_fiber ~= nil then
-		pcall(fiber.kill, stat_fiber:id())
-		stat_fiber = nil
+	f = stat_fiber
+	if f ~= nil and f:status() ~= "dead" then
+		pcall(fiber.kill, f:id())
 	end
 
 	if sock ~= nil then
 		sock:close()
-		sock = nil
 	end
+
+	common_stat_fiber = nil
+	stat_fiber = nil
+	sock = nil
 
 	metrics = {}
 	initialized = false
