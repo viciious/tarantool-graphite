@@ -415,15 +415,15 @@ end
 
 _M.stop = function()
 	local f
-	
+
 	f = common_stat_fiber
 	if f ~= nil and f:status() ~= "dead" then
-		pcall(fiber.kill, f:id())
+		f:cancel()
 	end
 
 	f = stat_fiber
 	if f ~= nil and f:status() ~= "dead" then
-		pcall(fiber.kill, f:id())
+		f:cancel()
 	end
 
 	if sock ~= nil then
