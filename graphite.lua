@@ -272,36 +272,55 @@ local function send_replication_stats(box_info, ts)
 			send_graph("replication_lag", repl.lag, ts)
 		end
 	else
-		local follow = 0
-		local idle, lag = (box.cfg.replication_timeout or 1) * 1000, 0
+		local u_follow = -1
+		local u_idle, u_lag = (box.cfg.replication_timeout or 1) * 1000, 0
 
-		for _, r in ipairs(repl) do
+		local d_follow = -1
+
+		for _, r in pairs(repl) do
 			local u = r.upstream
 			if u then
 				local peer = string.gsub(u.peer, "[.:]", "_")
 				local match = string.gmatch(peer, "[^@]+@(.*)")
 				if match then peer = match() end
 
-				local u_follow = 0
-				if u.status == "follow" then u_follow = 1 end
+				local follow = 0
+				if u.status == "follow" then follow = 1 end
 
 				local prefix = 'replication.upstream.' .. peer .. '.'
 				send_graph(prefix .. 'id', r.id, ts)
 				send_graph(prefix .. 'lsn', r.lsn, ts)
-				send_graph(prefix .. 'follow', u_follow, ts)
+				send_graph(prefix .. 'follow', follow, ts)
 				send_graph(prefix .. 'idle', u.idle, ts)
 				send_graph(prefix .. 'lag', u.lag, ts)
 
-				if u_follow > follow then follow = 1 end
-				if u.idle < idle then idle = u.idle end
-				if u.lag > lag then lag = u.lag end
+				if u.status == "follow" then
+					if u_follow < 0 then u_follow = 0 end
+					u_follow = u_follow + 1
+				end
+				if u.idle < u_idle then u_idle = u.idle end
+				if u.lag > u_lag then u_lag = u.lag end
+			end
+
+			local d = r.downstream
+			if d then
+				if d.status == "follow" then
+					if d_follow < 0 then d_follow = 0 end
+					d_follow = d_follow + 1
+				end
 			end
 		end
 
-		send_graph("replication.upstream.follow", follow, ts)
-		if follow ~= 0 then
-			send_graph("replication.upstream.idle", idle, ts)
-			send_graph("replication.upstream.lag", lag, ts)
+		if u_follow >= 0 then
+			send_graph("replication.upstream.follow", u_follow, ts)
+			if u_follow ~= 0 then
+				send_graph("replication.upstream.idle", u_idle, ts)
+				send_graph("replication.upstream.lag", u_lag, ts)
+			end
+		end
+
+		if d_follow >= 0 then
+			send_graph("replication.downstream.follow", d_follow, ts)
 		end
 	end
 
@@ -309,6 +328,45 @@ local function send_replication_stats(box_info, ts)
 		local anon = box_info.replication_anon
 		send_graph("replication_anon.count", anon.count, ts)
 	end
+end
+
+
+local function send_synchro_stats(box_info, ts)
+	local synchro = box_info.synchro
+	if not synchro then
+		return
+	end
+
+	local quorum_ok = 0
+
+	local queue = synchro.queue
+	for name, value in pairs(queue) do
+		if type(value) == "boolean" then
+			local intval = 0
+			if value then intval = 1 end
+			send_graph("synchro.queue." .. name, intval, ts)
+		elseif type(value) == "number" then
+			send_graph("synchro.queue." .. name, value, ts)
+		end
+	end
+
+	local repl = box_info.replication
+	if type(repl) == "table" then
+		local d_follow = 0
+
+		for _, r in pairs(repl) do
+			local d = r.downstream
+			if d and d.status == "follow" then
+				d_follow = d_follow + 1
+			end
+		end
+		if d_follow >= synchro.quorum then
+			quorum_ok = 1
+		end
+	end
+
+	send_graph("synchro.quorum", synchro.quorum, ts)
+	send_graph("synchro.quorum_ok", quorum_ok, ts)
 end
 
 local function send_cluster_stats(cluster, anon_uuid, ts)
@@ -381,6 +439,9 @@ local function send_stats(ostats_box, stats_box, ostats_net, stats_net, anon_clu
 
 		-- send replication stats
 		send_replication_stats(box_info, ts)
+
+		-- send synchro stats
+		send_synchro_stats(box_info, ts)
 
 		-- send cluster stats
 		if anon_cluster_uuid and anon_cluster_uuid ~= "" then
