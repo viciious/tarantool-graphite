@@ -337,8 +337,6 @@ local function send_synchro_stats(box_info, ts)
 		return
 	end
 
-	local quorum_ok = 0
-
 	local queue = synchro.queue
 	for name, value in pairs(queue) do
 		if type(value) == "boolean" then
@@ -351,6 +349,7 @@ local function send_synchro_stats(box_info, ts)
 	end
 
 	local repl = box_info.replication
+	local quorum_surplus = 0
 	if type(repl) == "table" then
 		local d_follow = 0
 
@@ -360,13 +359,19 @@ local function send_synchro_stats(box_info, ts)
 				d_follow = d_follow + 1
 			end
 		end
-		if d_follow >= synchro.quorum then
-			quorum_ok = 1
-		end
+
+		quorum_surplus = d_follow - synchro.quorum
+		quorum_surplus = quorum_surplus + 1 -- account for self
+	end
+
+	local quorum_ok = 0
+	if quorum_surplus >= 0 then
+		quorum_ok = 1
 	end
 
 	send_graph("synchro.quorum", synchro.quorum, ts)
 	send_graph("synchro.quorum_ok", quorum_ok, ts)
+	send_graph("synchro.quorum_surplus", quorum_surplus, ts)
 end
 
 local function send_cluster_stats(cluster, anon_uuid, ts)
