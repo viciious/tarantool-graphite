@@ -248,7 +248,7 @@ end
 local function send_replication_stats(box_info, ts)
 	local box_id = (box_info.id or box_info.server.id) or 0
 	local box_lsn = (box_info.lsn or box_info.server.lsn) or 0
-	local read_only = box_info.read_only or 0
+	local read_only = (box_info.ro or box_info.read_only) or 0
 
 	send_graph("id", box_id, ts)
 	send_graph("lsn", box_lsn, ts)
